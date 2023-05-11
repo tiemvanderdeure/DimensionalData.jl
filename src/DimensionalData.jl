@@ -26,7 +26,7 @@ import Adapt,
        Extents,
        IteratorInterfaceExtensions,
        RecipesBase,
-       SnoopPrecompile,
+       PrecompileTools,
        TableTraits,
        Tables
 

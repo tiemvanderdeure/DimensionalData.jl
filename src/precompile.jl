@@ -1,5 +1,5 @@
 
-PrecompileTools.@precompile_all_calls begin
+PrecompileTools.@compile_workload begin
     buffer = IOContext(IOBuffer(), :color=>true)
     for f in (zeros, ones, falses, trues, rand)
         x, y, z = X([:a, :b]), Y(10.0:10.0:30.0), Z()
