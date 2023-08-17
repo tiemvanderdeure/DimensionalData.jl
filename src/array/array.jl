@@ -388,10 +388,10 @@ Keywords are the same as for [`DimArray`](@ref).
 ```@doctest
 julia> using DimensionalData
 
-julia> rand(Bool, X(2), Y(4))
-2×4 DimArray{Bool,2} with dimensions: X, Y
- 1  0  0  1
- 1  0  1  1
+julia> fill(1, X(2), Y(4))
+2×4 DimArray{Int64,2} with dimensions: X, Y
+ 1  1  1  1
+ 1  1  1  1
 ```
 """
 Base.fill
