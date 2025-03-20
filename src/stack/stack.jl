@@ -458,10 +458,13 @@ end
 DimStack(st::AbstractDimStack) = 
     DimStack(data(st), dims(st), refdims(st), layerdims(st), metadata(st), layermetadata(st))
 # Write each column from a table with one or more coordinate columns to a layer in a DimStack
-function DimStack(table, dims::Tuple; selector=DimensionalData.Contains(), kw...)
+function DimStack(
+    table, dims::Tuple; 
+    selector=Contains(), precision=6, missingval = missing, kw...)
     data_cols = _data_cols(table, dims)
+    dims = guess_dims(table, dims, precision=precision)
     indices = coords_to_indices(table, dims; selector=selector)
-    arrays = [restore_array(d, indices, dims; missingval=missing) for d in values(data_cols)]
+    arrays = [restore_array(d, indices, dims, missingval) for d in values(data_cols)]
     return DimStack(NamedTuple{keys(data_cols)}(arrays), dims; kw...)
 end
 
