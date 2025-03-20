@@ -56,14 +56,14 @@ julia> coords_to_indices(t, dims(d))
  65536
 ```
 """
-function coords_to_indices(table, dims::Tuple; selector=DimensionalData.Near())
+function coords_to_indices(table, dims::Tuple; selector=Near())
     return _coords_to_indices(table, dims, selector)
 end
 
 # Find the order of the table's rows according to the coordinate values 
-_coords_to_indices(table, dims::Tuple, sel::DimensionalData.Selector) = 
+_coords_to_indices(table, dims::Tuple, sel::Selector) = 
     _coords_to_indices(_dim_cols(table, dims), dims, sel)
-function _coords_to_indices(coords::NamedTuple, dims::Tuple, sel::DimensionalData.Selector)
+function _coords_to_indices(coords::NamedTuple, dims::Tuple, sel::Selector)
     ords = _coords_to_ords(coords, dims, sel)
     indices = _ords_to_indices(ords, dims)
     return indices
@@ -126,7 +126,7 @@ julia> DD.guess_dims(t_rand, X => DD.ForwardOrdered, Y => DD.ReverseOrdered, :Ba
 ```
 """
 guess_dims(table; kw...) = guess_dims(table, _dim_col_names(table); kw...)
-function guess_dims(table, dims::Tuple; precision=6)
+function guess_dims(table, dims::Tuple; precision=6, kw...)
     map(dim -> _guess_dims(get_column(table, dim), dim, precision), dims)
 end
 
@@ -161,22 +161,19 @@ function data_col_names(table, dims::Tuple)
     return filter(x -> !(x in dim_cols), Tables.columnnames(table))
 end
 
-_guess_dims(coords::AbstractVector, dim::DD.Dimension, args...) = dim
 _guess_dims(coords::AbstractVector, dim::Type{<:DD.Dimension}, args...) = _guess_dims(coords, DD.name(dim), args...)
 _guess_dims(coords::AbstractVector, dim::Pair, args...) = _guess_dims(coords, first(dim), last(dim), args...)
 function _guess_dims(coords::AbstractVector, dim::Symbol, ::Type{T}, precision::Int) where {T <: DD.Order}
     return _guess_dims(coords, dim, T(), precision)
 end
 function _guess_dims(coords::AbstractVector, dim::Symbol, precision::Int)
-    dim_vals = _dim_vals(coords, precision)
-    order = _guess_dim_order(dim_vals)
-    span = _guess_dim_span(dim_vals, order, precision)
-    return _build_dim(dim_vals, dim, order, span)
+    dim_vals = _dim_vals(coords, dim, precision)
+    return format(Dim{dim}(dim_vals))
 end
-function _guess_dims(coords::AbstractVector, dim::Symbol, order::DD.Order, precision::Int)
-    dim_vals = _dim_vals(coords, order, precision)
-    span = _guess_dim_span(dim_vals, order, precision)
-    return _build_dim(dim_vals, dim, order, span)
+function _guess_dims(coords::AbstractVector, dim::DD.Dimension, precision::Int) 
+    dim_vals = _dim_vals(coords, lookup(dim), precision)
+    newdim = rebuild(dim, rebuild(lookup(dim); data = dim_vals))
+    return format(newdim)
 end
 
 # Extract coordinate columns from table
@@ -229,53 +226,44 @@ _round_ords(ords::AbstractVector{<:Real}, ::DimensionalData.Center) = round.(Int
 _round_ords(ords::AbstractVector{<:Real}, ::DimensionalData.End) = ceil.(Int, ords)
 
 # Extract dimension value from the given vector of coordinates
-_dim_vals(coords::AbstractVector, precision::Int) = _unique_vals(coords, precision)
-_dim_vals(coords::AbstractVector, ::DD.Order, precision::Int) = _unique_vals(coords, precision)
-_dim_vals(coords::AbstractVector, ::DD.ForwardOrdered, precision::Int) = sort!(_unique_vals(coords, precision))
-_dim_vals(coords::AbstractVector, ::DD.ReverseOrdered, precision::Int) = sort!(_unique_vals(coords, precision), rev=true)
+function _dim_vals(coords::AbstractVector, dim, precision::Int)
+    vals = _unique_vals(coords, precision)
+    return _maybe_as_range(vals, precision)
+end
+function _dim_vals(coords::AbstractVector, l::Lookup, precision::Int)
+    val(l) isa AutoValues || return val(l)
+    vals = _unique_vals(coords, precision)
+    vals2 = _maybe_as_range(vals, precision)
+    _maybe_order!(vals2, order(l))
+end
+
+_maybe_order!(A::AbstractVector, ::Order) = A
+_maybe_order!(A::AbstractVector, ::DD.ForwardOrdered) = sort!(A)
+_maybe_order!(A::AbstractVector, ::DD.ReverseOrdered) = sort!(A, rev=true)
 
 # Extract all unique coordinates from the given vector
 _unique_vals(coords::AbstractVector, ::Int) = unique(coords)
 _unique_vals(coords::AbstractVector{<:Real}, precision::Int) = round.(coords, digits=precision) |> unique
 
-# Determine if the given coordinates are forward ordered, reverse ordered, or unordered
-function _guess_dim_order(coords::AbstractVector)
-    try
-        if issorted(coords)
-            return DD.ForwardOrdered()
-        elseif issorted(coords, rev=true)
-            return DD.ReverseOrdered()
-        else
-            return DD.Unordered()
-        end
-    catch 
-        return DD.Unordered()
-    end
-end
-
 # Estimate the span between consecutive coordinates
-_guess_dim_span(::AbstractVector, ::DD.Order, ::Int) = DD.Irregular()
-function _guess_dim_span(coords::AbstractVector{<:Real}, ::DD.Ordered, precision::Int)
-    steps = round.((@view coords[2:end]) .- (@view coords[1:end-1]), digits=precision)
+function _maybe_as_range(A::AbstractVector{<:Real}, precision::Int)
+    A_r = range(first(A), last(A), length(A))
+    atol = 10.0^(-precision)
+    return all(i -> isapprox(A_r[i], A[i]; atol), eachindex(A)) ? A_r : A
+end
+function _maybe_as_range(A::AbstractVector{<:Integer}, precision::Int)
+    idx1, idxrest = Iterators.peel(eachindex(A))
+    step = A[idx1+1] - A[idx1]
+    for idx in idxrest
+        A[idx] - A[idx-1] == step || return A
+    end
+    return first(A):step:last(A)
+end
+function _maybe_as_range(A::AbstractVector{<:Dates.AbstractTime}, precision::Int)
+    steps = (@view A[2:end]) .- (@view A[1:end-1])
     span = argmin(abs, steps)
-    return all(isinteger, round.(steps ./ span, digits=precision)) ? DD.Regular(span) : DD.Irregular()
-end
-function _guess_dim_span(coords::AbstractVector{<:Dates.AbstractTime}, ::DD.Ordered, precision::Int)
-    steps = (@view coords[2:end]) .- (@view coords[1:end-1])
-    span = argmin(abs, steps)
-    return all(isinteger, round.(steps ./ span, digits=precision)) ? DD.Regular(span) : DD.Irregular()
-end
-
-function _build_dim(vals::AbstractVector, dim::Symbol, order::DD.Order, ::DD.Span)
-    return rebuild(name2dim(dim), DD.Categorical(vals, order=order))
-end
-function _build_dim(vals::AbstractVector{<:Union{Number,Dates.AbstractTime}}, dim::Symbol, order::DD.Order, span::DD.Irregular)
-    return rebuild(name2dim(dim), DD.Sampled(vals, order=order, span=span, sampling=DD.Points()))
-end
-function _build_dim(vals::AbstractVector{<:Union{Number,Dates.AbstractTime}}, dim::Symbol, order::DD.Order, span::DD.Regular)
-    n = round(Int, abs((last(vals) - first(vals)) / span.step) + 1)
-    dim_vals = StepRangeLen(first(vals), span.step, n)
-    return rebuild(name2dim(dim), DD.Sampled(dim_vals, order=order, span=span, sampling=DD.Points()))
+    isregular = all(isinteger, round.(steps ./ span, digits=precision))
+    return isregular ? range(first(A), last(A), length(A)) : A
 end
 
 # Determine the index from a tuple of coordinate orders
