@@ -125,7 +125,8 @@ function Base.NamedTuple(A1::AbstractDimArray, As::AbstractDimArray...)
 end
 
 # undef constructor for all AbstractDimArray 
-(::Type{A})(x::UndefInitializer, dims::Dimension...; kw...) where {A<:AbstractDimArray{<:Any}} = A(x, dims; kw...)
+(::Type{A})(x::UndefInitializer, dims::Dimension...; kw...) where {A<:AbstractDimArray{T}} where T = 
+    A(x, dims; kw...)
 function (::Type{A})(x::UndefInitializer, dims::DimTuple; kw...) where {A<:AbstractDimArray{T}} where T
     basetypeof(A)(Array{T}(undef, size(dims)), dims; kw...)
 end
