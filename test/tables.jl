@@ -164,38 +164,60 @@ end
     t1 = Random.shuffle(t)
     t2 = t[101:end,:]
 
-    # Restore DimArray from shuffled table
-    @test all(DimArray(t1, dims(ds)) .== a)
-    @test all(DimArray(t1, dims(ds), name="a") .== a)
-    @test all(DimArray(t1, dims(ds), name="b") .== b)
-    @test all(DimArray(t1, dims(ds), name="c") .== c)
+    @testset "All dimensions passed" begin
+        # Restore DimArray from shuffled table
+        @test all(DimArray(t1, dims(ds)) .== a)
+        @test all(DimArray(t1, dims(ds), name="a") .== a)
+        @test all(DimArray(t1, dims(ds), name="b") .== b)
+        @test all(DimArray(t1, dims(ds), name="c") .== c)
 
-    # Restore DimArray from table with missing rows
-    @test all(DimArray(t2, dims(ds), name="a")[Y(2:100)] .== a[Y(2:100)])
-    @test all(DimArray(t2, dims(ds), name="b")[Y(2:100)] .== b[Y(2:100)])
-    @test all(DimArray(t2, dims(ds), name="c")[Y(2:100)] .== c[Y(2:100)])
-    @test DimArray(t2, dims(ds), name="a")[Y(1)] .|> ismissing |> all
-    @test DimArray(t2, dims(ds), name="b")[Y(1)] .|> ismissing |> all
-    @test DimArray(t2, dims(ds), name="c")[Y(1)] .|> ismissing |> all
-    @test DimArray(t2, dims(ds), name="a")[Y(2:100)] .|> ismissing .|> (!) |> all
-    @test DimArray(t2, dims(ds), name="b")[Y(2:100)] .|> ismissing .|> (!) |> all
-    @test DimArray(t2, dims(ds), name="c")[Y(2:100)] .|> ismissing .|> (!) |> all
+        # Restore DimArray from table with missing rows
+        @test all(DimArray(t2, dims(ds), name="a")[Y(2:100)] .== a[Y(2:100)])
+        @test all(DimArray(t2, dims(ds), name="b")[Y(2:100)] .== b[Y(2:100)])
+        @test all(DimArray(t2, dims(ds), name="c")[Y(2:100)] .== c[Y(2:100)])
+        @test DimArray(t2, dims(ds), name="a")[Y(1)] .|> ismissing |> all
+        @test DimArray(t2, dims(ds), name="b")[Y(1)] .|> ismissing |> all
+        @test DimArray(t2, dims(ds), name="c")[Y(1)] .|> ismissing |> all
+        @test DimArray(t2, dims(ds), name="a")[Y(2:100)] .|> ismissing .|> (!) |> all
+        @test DimArray(t2, dims(ds), name="b")[Y(2:100)] .|> ismissing .|> (!) |> all
+        @test DimArray(t2, dims(ds), name="c")[Y(2:100)] .|> ismissing .|> (!) |> all
 
-    # Restore DimStack from shuffled table
-    restored_stack = DimStack(t1, dims(ds))
-    @test all(restored_stack.a .== ds.a)
-    @test all(restored_stack.b .== ds.b)
-    @test all(restored_stack.c .== ds.c)
+        # Restore DimStack from shuffled table
+        restored_stack = DimStack(t1, dims(ds))
+        @test all(restored_stack.a .== ds.a)
+        @test all(restored_stack.b .== ds.b)
+        @test all(restored_stack.c .== ds.c)
 
-    # Restore DimStack from table with missing rows
-    restored_stack = DimStack(t2, dims(ds))
-    @test all(restored_stack.a[Y(2:100)] .== ds.a[Y(2:100)])
-    @test all(restored_stack.b[Y(2:100)] .== ds.b[Y(2:100)])
-    @test all(restored_stack.c[Y(2:100)] .== ds.c[Y(2:100)])
-    @test restored_stack.a[Y(1)] .|> ismissing |> all
-    @test restored_stack.b[Y(1)] .|> ismissing |> all
-    @test restored_stack.c[Y(1)] .|> ismissing |> all
-    @test restored_stack.a[Y(2:100)] .|> ismissing .|> (!) |> all
-    @test restored_stack.b[Y(2:100)] .|> ismissing .|> (!) |> all
-    @test restored_stack.c[Y(2:100)] .|> ismissing .|> (!) |> all
+        # Restore DimStack from table with missing rows
+        restored_stack = DimStack(t2, dims(ds))
+        @test all(restored_stack.a[Y(2:100)] .== ds.a[Y(2:100)])
+        @test all(restored_stack.b[Y(2:100)] .== ds.b[Y(2:100)])
+        @test all(restored_stack.c[Y(2:100)] .== ds.c[Y(2:100)])
+        @test restored_stack.a[Y(1)] .|> ismissing |> all
+        @test restored_stack.b[Y(1)] .|> ismissing |> all
+        @test restored_stack.c[Y(1)] .|> ismissing |> all
+        @test restored_stack.a[Y(2:100)] .|> ismissing .|> (!) |> all
+        @test restored_stack.b[Y(2:100)] .|> ismissing .|> (!) |> all
+        @test restored_stack.c[Y(2:100)] .|> ismissing .|> (!) |> all
+    end
+
+    @testset "Dimensions automatically detected" begin
+        da = DimArray(t)
+        hasdim(da, Dim{:X})
+        hasdim(da, X)
+        @test dims(da, X) == dims(a, X)
+        lookup(dims(da, :Y)) == lookup(dims(a, Y))
+        map(dims(a), dims(da)) do x1, x2
+            @show lookup(x1) == lookup(x2)
+        end
+
+    end
+
+    @testset "Manually specifying lookups" begin
+        ds = DimStack(da, da2)
+        t = DimTable(ds)
+        df = DataFrame(t; copycols=true)
+        DimArray(df, (X(Categorical(order = ReverseOrdered())), Y))
+    
+    end
 end
