@@ -244,8 +244,10 @@ _maybe_order!(A::AbstractVector, ::DD.ReverseOrdered) = sort!(A, rev=true)
 # Extract all unique coordinates from the given vector
 _unique_vals(coords::AbstractVector, ::Int) = unique(coords)
 _unique_vals(coords::AbstractVector{<:Real}, precision::Int) = round.(coords, digits=precision) |> unique
+_unique_vals(coords::AbstractVector{<:Integer}, ::Int) = unique(coords)
 
 # Estimate the span between consecutive coordinates
+_maybe_as_range(A::AbstractVector, precision) = A
 function _maybe_as_range(A::AbstractVector{<:Real}, precision::Int)
     A_r = range(first(A), last(A), length(A))
     atol = 10.0^(-precision)
