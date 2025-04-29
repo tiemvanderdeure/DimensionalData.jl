@@ -199,7 +199,6 @@ function _data_cols(table, dims::Tuple)
 end
 
 # Determine the ordinality of a set of coordinates
-_coords_to_ords(coords::AbstractVector, dim::Dimension, sel::Selector, atol) = _coords_to_ords(coords, dim, sel)
 _coords_to_ords(coords::Tuple, dims::Tuple, sel, atol) = map(args -> _coords_to_ords(args..., sel, atol), zip(coords, dims))
 _coords_to_ords(coords::NamedTuple, dims::Tuple, sel, atol) = _coords_to_ords(map(x -> coords[x], name(dims)), dims, sel, atol)
 # implement some default selectors
