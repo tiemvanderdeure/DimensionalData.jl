@@ -30,7 +30,7 @@ function restore_array(data::AbstractVector, indices::AbstractVector{<:Integer},
 end
 
 """
-    coords_to_indices(table, dims; selector=Near())
+    coords_to_indices(table, dims; [selector], [atol])
 
 Return the flat index of each row in `table` based on its associated coordinates.
 Dimension columns are determined from the name of each dimension in `dims`.
@@ -39,7 +39,10 @@ It is assumed that the source/destination array has the same dimension order as 
 # Arguments
 - `table`: A table representation of a dimensional array. 
 - `dims`: A `Tuple` of `Dimension` corresponding to the source/destination array.
-- `selector`: The selector type to use for non-numerical/irregular coordinates.
+- `selector`: The selector type to use. This defaults to `Near()` for orderd, sampled dimensions
+    and `At()` for all other dimensions. 
+- `atol`: The absolute tolerance to use with `At()`. This defaults to `1e-6`.
+
 
 # Example
 ```julia
@@ -56,15 +59,15 @@ julia> coords_to_indices(t, dims(d))
  65536
 ```
 """
-function coords_to_indices(table, dims::Tuple; selector=Near())
-    return _coords_to_indices(table, dims, selector)
+function coords_to_indices(table, dims::Tuple; selector=nothing, atol = 1e-6)
+    return _coords_to_indices(table, dims, selector, atol)
 end
 
 # Find the order of the table's rows according to the coordinate values 
-_coords_to_indices(table, dims::Tuple, sel::Selector) = 
-    _coords_to_indices(_dim_cols(table, dims), dims, sel)
-function _coords_to_indices(coords::NamedTuple, dims::Tuple, sel::Selector)
-    ords = _coords_to_ords(coords, dims, sel)
+_coords_to_indices(table, dims::Tuple, sel, atol) = 
+    _coords_to_indices(_dim_cols(table, dims), dims, sel, atol)
+function _coords_to_indices(coords::NamedTuple, dims::Tuple, sel, atol)
+    ords = _coords_to_ords(coords, dims, sel, atol)
     indices = _ords_to_indices(ords, dims)
     return indices
 end
@@ -127,25 +130,23 @@ julia> DD.guess_dims(t_rand, X => DD.ForwardOrdered, Y => DD.ReverseOrdered, :Ba
 """
 guess_dims(table; kw...) = guess_dims(table, _dim_col_names(table); kw...)
 function guess_dims(table, dims::Tuple; precision=6, kw...)
-    map(dim -> _guess_dims(get_column(table, dim), dim, precision), dims)
+    map(dim -> _guess_dims(get_column(table, name(dim)), dim, precision), dims)
 end
 
 """
-    get_column(table, dim::Type{<:DD.Dimension})
-    get_column(table, dim::DD.Dimension)
+    get_column(table, dim::Type{<:Dimension})
+    get_column(table, dim::Dimension)
     get_column(table, dim::Symbol)
-    get_column(table, dim::Pair)
 
 Retrieve the coordinate data stored in the column specified by `dim`.
 
 # Arguments
 - `table`: The input data table, which could be a `DataFrame`, `DimTable`, or any other Tables.jl compatible data structure. 
-- `dim`: A single dimension to be retrieved, which may be a `Symbol`, a `Dimension`, or a `Dimension => Order` pair.
+- `dim`: A single dimension to be retrieved, which may be a `Symbol`, a `Dimension`.
 """
-get_column(table, x::Type{<:DD.Dimension}) = Tables.getcolumn(table, DD.name(x))
-get_column(table, x::DD.Dimension) = Tables.getcolumn(table, DD.name(x))
+get_column(table, x::Type{<:Dimension}) = Tables.getcolumn(table, name(x))
+get_column(table, x::Dimension) = Tables.getcolumn(table, name(x))
 get_column(table, x::Symbol) = Tables.getcolumn(table, x)
-get_column(table, x::Pair) = get_column(table, first(x))
 
 """
     data_col_names(table, dims::Tuple)
@@ -170,9 +171,14 @@ function _guess_dims(coords::AbstractVector, dim::Symbol, precision::Int)
     dim_vals = _dim_vals(coords, dim, precision)
     return format(Dim{dim}(dim_vals))
 end
+function _guess_dims(coords::AbstractVector, dim::Type{<:Dimension}, precision::Int)
+    dim_vals = _dim_vals(coords, dim, precision)
+    return format(dim(dim_vals))
+end
 function _guess_dims(coords::AbstractVector, dim::DD.Dimension, precision::Int) 
-    dim_vals = _dim_vals(coords, lookup(dim), precision)
-    newdim = rebuild(dim, rebuild(lookup(dim); data = dim_vals))
+    l = lookup(dim)
+    dim_vals = _dim_vals(coords, l, precision)
+    newdim = rebuild(dim, rebuild(l; data = dim_vals))
     return format(newdim)
 end
 
@@ -193,31 +199,40 @@ function _data_cols(table, dims::Tuple)
 end
 
 # Determine the ordinality of a set of coordinates
-_coords_to_ords(coords::AbstractVector, dim::Dimension, sel::DD.Selector) = _coords_to_ords(coords, dim, sel, DD.locus(dim), DD.span(dim))
-_coords_to_ords(coords::Tuple, dims::Tuple, sel::DD.Selector) = Tuple(_coords_to_ords(c, d, sel) for (c, d) in zip(coords, dims))
-_coords_to_ords(coords::NamedTuple, dims::Tuple, sel::DD.Selector) = _coords_to_ords(map(x -> coords[x], DD.name(dims)), dims, sel)
-
-# Determine the ordinality of a set of regularly spaced numerical coordinates
-function _coords_to_ords(
-    coords::AbstractVector{<:Real}, 
-    dim::Dimension, 
-    ::DimensionalData.Near,
-    position::DimensionalData.Position, 
-    span::DimensionalData.Regular)
-    step = DD.step(span)
-    float_ords = ((coords .- first(dim)) ./ step) .+ 1
-    int_ords = _round_ords(float_ords, position)
-    return clamp!(int_ords, 1, length(dim))
+_coords_to_ords(coords::AbstractVector, dim::Dimension, sel::Selector, atol) = _coords_to_ords(coords, dim, sel)
+_coords_to_ords(coords::Tuple, dims::Tuple, sel, atol) = map(args -> _coords_to_ords(args..., sel, atol), zip(coords, dims))
+_coords_to_ords(coords::NamedTuple, dims::Tuple, sel, atol) = _coords_to_ords(map(x -> coords[x], name(dims)), dims, sel, atol)
+# implement some default selectors
+_coords_to_ords(coords::AbstractVector, dim::Dimension{<:AbstractCategorical}, sel::Nothing, atol) = 
+    _coords_to_ords(coords, dim, At(), atol)
+function _coords_to_ords(coords::AbstractVector, dim::Dimension{<:AbstractSampled}, sel::Nothing, atol) 
+    sel = if sampling(dim) isa Intervals
+        Contains()
+    elseif isordered(dim) 
+        Near()
+    else 
+        At()
+    end
+    _coords_to_ords(coords, dim, sel, atol)
 end
+_coords_to_ords(coords::AbstractVector, dim::Dimension, sel::Nothing) = 
+    _coords_to_ords(coords, dim, Near(), atol)
 
-# Determine the ordinality of a set of categorical or irregular coordinates
+# get indices of the coordinates
 function _coords_to_ords(
     coords::AbstractVector, 
     dim::Dimension, 
-    sel::DimensionalData.Selector, 
-    ::DimensionalData.Position, 
-    ::DimensionalData.Span)
-    return map(c -> DimensionalData.selectindices(dim, rebuild(sel, c)), coords)
+    sel::Selector,
+    atol)
+    return map(c -> selectindices(dim, rebuild(sel, c)), coords)
+end
+# get indices of the coordinates
+function _coords_to_ords(
+    coords::AbstractVector, 
+    dim::Dimension, 
+    sel::At,
+    atol)
+    return map(c -> selectindices(dim, rebuild(sel; val = c, atol)), coords)
 end
 
 # Round coordinate ordinality to the appropriate integer given the specified locus
@@ -231,11 +246,12 @@ function _dim_vals(coords::AbstractVector, dim, precision::Int)
     return _maybe_as_range(vals, precision)
 end
 function _dim_vals(coords::AbstractVector, l::Lookup, precision::Int)
-    val(l) isa AutoValues || return val(l)
+    val(l) isa AutoValues || return val(l) # do we want to have some kind of check that the values match?
     vals = _unique_vals(coords, precision)
-    vals2 = _maybe_as_range(vals, precision)
-    _maybe_order!(vals2, order(l))
+    _maybe_order!(vals, order(l))
+    return _maybe_as_range(vals, precision)
 end
+_dim_vals(coords::AbstractVector, l::AbstractVector, precision::Int) = l # same comment as above?
 
 _maybe_order!(A::AbstractVector, ::Order) = A
 _maybe_order!(A::AbstractVector, ::DD.ForwardOrdered) = sort!(A)
