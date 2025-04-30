@@ -464,6 +464,7 @@ DimStack(st::AbstractDimStack) =
     DimStack(data(st), dims(st), refdims(st), layerdims(st), metadata(st), layermetadata(st))
 # Write each column from a table with one or more coordinate columns to a layer in a DimStack
 DimStack(table, dims::Tuple; kw...) = _dimstack_from_table(table, dims; kw...)
+DimStack(table; kw...) = _dimstack_from_table(table, guess_dims(table); kw...)
 
 function _dimstack_from_table(table, dims; selector=nothing, precision=6, missingval = missing, kw...)
     table = Tables.columnaccess(table) ? table : Tables.columns(table)
