@@ -184,11 +184,10 @@ function _guess_dims(coords::AbstractVector, dim::Dimension, precision::Int)
     return format(rebuild(dim, newl))
 end
 function _guess_dims(coords::AbstractVector, l::Lookup, precision::Int)
-    dim_vals = _dim_vals(coords, dim, precision)
     dim_vals = _dim_vals(coords, l, precision)
-    newl = rebuild(l; val = dim_vals)
+    return rebuild(l; data = dim_vals)
 end
-# lookup(dim) could just return a vector
+# lookup(dim) could just return a vector - then we keep those values
 _guess_dims(coords::AbstractVector, l::AbstractVector, precision::Int) = l
 
 # Extract coordinate columns from table
