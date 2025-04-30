@@ -95,6 +95,10 @@ A tuple containing the inferred dimensions from the table.
 
 # Example
 ```julia
+julia> using DimensionalData, DataFrames
+
+julia> import DimensionalData: Lookups, guess_dims
+
 julia> xdims = X(LinRange{Float64}(610000.0, 661180.0, 2560));
 
 julia> ydims = Y(LinRange{Float64}(6.84142e6, 6.79024e6, 2560));
@@ -112,17 +116,17 @@ julia> dims(d)
 → Y    Sampled{Float64} LinRange{Float64}(6.84142e6, 6.79024e6, 2560) ReverseOrdered Regular Points,
 ↗ Band Categorical{Symbol} [:B02, :B03, :B04] ForwardOrdered
 
-julia> DD.guess_dims(t)
+julia> guess_dims(t)
 ↓ X    Sampled{Float64} 610000.0:20.0:661180.0 ForwardOrdered Regular Points,
 → Y    Sampled{Float64} 6.84142e6:-20.0:6.79024e6 ReverseOrdered Regular Points,
 ↗ Band Categorical{Symbol} [:B02, :B03, :B04] ForwardOrdered
 
-julia> DD.guess_dims(t, X, Y, :Band)
+julia> guess_dims(t, X, Y, :Band)
 ↓ X    Sampled{Float64} 610000.0:20.0:661180.0 ForwardOrdered Regular Points,
 → Y    Sampled{Float64} 6.84142e6:-20.0:6.79024e6 ReverseOrdered Regular Points,
 ↗ Band Categorical{Symbol} [:B02, :B03, :B04] ForwardOrdered
 
-julia> DD.guess_dims(t_rand, X => DD.ForwardOrdered, Y => DD.ReverseOrdered, :Band => DD.ForwardOrdered)
+julia> guess_dims(t_rand, X => ForwardOrdered, Y => ReverseOrdered, :Band => ForwardOrdered)
 ↓ X    Sampled{Float64} 610000.0:20.0:661180.0 ForwardOrdered Regular Points,
 → Y    Sampled{Float64} 6.84142e6:-20.0:6.79024e6 ReverseOrdered Regular Points,
 ↗ Band Categorical{Symbol} [:B02, :B03, :B04] ForwardOrdered
@@ -158,13 +162,13 @@ Return the names of all columns that don't matched the dimensions given by `dims
 - `dims`: A `Tuple` of one or more `Dimensions`.
 """
 function data_col_names(table, dims::Tuple)
-    dim_cols = DD.name(dims)
+    dim_cols = name(dims)
     return filter(x -> !(x in dim_cols), Tables.columnnames(table))
 end
 
-_guess_dims(coords::AbstractVector, dim::Type{<:DD.Dimension}, args...) = _guess_dims(coords, DD.name(dim), args...)
+_guess_dims(coords::AbstractVector, dim::Type{<:Dimension}, args...) = _guess_dims(coords, name(dim), args...)
 _guess_dims(coords::AbstractVector, dim::Pair, args...) = _guess_dims(coords, first(dim), last(dim), args...)
-function _guess_dims(coords::AbstractVector, dim::Symbol, ::Type{T}, precision::Int) where {T <: DD.Order}
+function _guess_dims(coords::AbstractVector, dim::Symbol, ::Type{T}, precision::Int) where {T <: Order}
     return _guess_dims(coords, dim, T(), precision)
 end
 function _guess_dims(coords::AbstractVector, dim::Symbol, precision::Int)
@@ -175,22 +179,27 @@ function _guess_dims(coords::AbstractVector, dim::Type{<:Dimension}, precision::
     dim_vals = _dim_vals(coords, dim, precision)
     return format(dim(dim_vals))
 end
-function _guess_dims(coords::AbstractVector, dim::DD.Dimension, precision::Int) 
-    l = lookup(dim)
-    dim_vals = _dim_vals(coords, l, precision)
-    newdim = rebuild(dim, rebuild(l; data = dim_vals))
-    return format(newdim)
+function _guess_dims(coords::AbstractVector, dim::Dimension, precision::Int) 
+    newl = _guess_dims(coords, lookup(dim), precision)
+    return format(rebuild(dim, newl))
 end
+function _guess_dims(coords::AbstractVector, l::Lookup, precision::Int)
+    dim_vals = _dim_vals(coords, dim, precision)
+    dim_vals = _dim_vals(coords, l, precision)
+    newl = rebuild(l; val = dim_vals)
+end
+# lookup(dim) could just return a vector
+_guess_dims(coords::AbstractVector, l::AbstractVector, precision::Int) = l
 
 # Extract coordinate columns from table
 function _dim_cols(table, dims::Tuple)
-    dim_cols = DD.name(dims)
+    dim_cols = name(dims)
     return NamedTuple{dim_cols}(Tables.getcolumn(table, col) for col in dim_cols)
 end
 
 # Extract dimension column names from the given table
 _dim_col_names(table) = filter(x -> x in Tables.columnnames(table), (:X,:Y,:Z,:Ti,:Band))
-_dim_col_names(table, dims::Tuple) = map(col -> Tables.getcolumn(table, col), DD.name(dims))
+_dim_col_names(table, dims::Tuple) = map(col -> Tables.getcolumn(table, col), name(dims))
 
 # Extract data columns from table
 function _data_cols(table, dims::Tuple)
@@ -253,8 +262,8 @@ end
 _dim_vals(coords::AbstractVector, l::AbstractVector, precision::Int) = l # same comment as above?
 
 _maybe_order!(A::AbstractVector, ::Order) = A
-_maybe_order!(A::AbstractVector, ::DD.ForwardOrdered) = sort!(A)
-_maybe_order!(A::AbstractVector, ::DD.ReverseOrdered) = sort!(A, rev=true)
+_maybe_order!(A::AbstractVector, ::ForwardOrdered) = sort!(A)
+_maybe_order!(A::AbstractVector, ::ReverseOrdered) = sort!(A, rev=true)
 
 # Extract all unique coordinates from the given vector
 _unique_vals(coords::AbstractVector, ::Int) = unique(coords)
