@@ -485,7 +485,7 @@ end
 function DimArray(data::AbstractVector{<:NamedTuple{K}}, dims::Tuple; 
     refdims=(), name=NoName(), metadata=NoMetadata(), kw...
 ) where K
-    if all(d -> Dimensions.name(d) in K, dims)
+    if all(map(d -> Dimensions.name(d) in K, dims))
         table = Tables.columns(data)
         return _dimarray_from_table(table, guess_dims(table, dims; kw...); 
             refdims, name, metadata, kw...)
