@@ -1,11 +1,11 @@
 """
-    restore_array(data::AbstractVector, indices::AbstractVector{<:Integer}, dims::Tuple, missingval)
+    restore_array(data::AbstractVector, indices::AbstractVector{<:NTuple{<:Any, Dim}}, dims::Tuple, missingval)
 
 Restore a dimensional array from its tabular representation.
 
 # Arguments
 - `data`: An `AbstractVector` containing the flat data to be written to a `DimArray`.
-- `indices`: An `AbstractVector` containing the flat indices corresponding to each element in `data`.
+- `indices`: An `AbstractVector` containing the dimensional indices corresponding to each element in `data`.
 - `dims`: The dimensions of the destination `DimArray`.
 - `missingval`: The value to write for missing elements in `data`.
 
@@ -13,28 +13,30 @@ Restore a dimensional array from its tabular representation.
 An `Array` containing the ordered valued in `data` with the size specified by `dims`.
 ```
 """
-function restore_array(data::AbstractVector, indices::AbstractVector{<:Integer}, dims::Tuple, missingval)
+function restore_array(data::AbstractVector, indices::AbstractVector, dims::Tuple, missingval)
     # Allocate Destination Array
-    dst_size = prod(map(length, dims))
-    dst = Vector{eltype(data)}(undef, dst_size)
-    dst[indices] .= data
+    dst = DimArray{eltype(data)}(undef, dims)
+    for (idx, d) in zip(indices, data)
+        dst[idx] = d
+    end
 
-    # Handle Missing Rows
-    _missingval = _cast_missing(data, missingval)
-    missing_rows = ones(Bool, dst_size)
-    missing_rows[indices] .= false
-    data = ifelse.(missing_rows, _missingval, dst)
-
-    # Reshape Array
-    return reshape(data, size(dims))
+    if length(indices) !== length(dst)
+        # Handle Missing Rows
+        _missingval = _cast_missing(data, missingval)
+        missing_rows = trues(dims)
+        for idx in indices # looping is faster than broadcasting
+            missing_rows[idx] = false 
+        end
+        return ifelse.(missing_rows, _missingval, dst)
+    end
+    return dst
 end
 
 """
     coords_to_indices(table, dims; [selector], [atol])
 
-Return the flat index of each row in `table` based on its associated coordinates.
+Return the dimensional index of each row in `table` based on its associated coordinates.
 Dimension columns are determined from the name of each dimension in `dims`.
-It is assumed that the source/destination array has the same dimension order as `dims`.
 
 # Arguments
 - `table`: A table representation of a dimensional array. 
@@ -43,33 +45,26 @@ It is assumed that the source/destination array has the same dimension order as 
     and `At()` for all other dimensions. 
 - `atol`: The absolute tolerance to use with `At()`. This defaults to `1e-6`.
 
-
 # Example
 ```julia
-julia> d = DimArray(rand(256, 256), (X, Y));
+julia> d = rand(X(1:256), Y(1:256));
 
 julia> t = DimTable(d);
 
 julia> coords_to_indices(t, dims(d))
-65536-element Vector{Int64}:
-     1
-     2
-     ⋮
- 65535
- 65536
+65536-element Vector{Tuple{X{Int64}, Y{Int64}}}:
+ (↓ X 1, → Y 1)
+ (↓ X 2, → Y 1)
+ (↓ X 3, → Y 1)
+ (↓ X 4, → Y 1)
+ ⋮
+ (↓ X 254, → Y 256)
+ (↓ X 255, → Y 256)
+ (↓ X 256, → Y 256)
 ```
 """
 function coords_to_indices(table, dims::Tuple; selector=nothing, atol = 1e-6)
     return _coords_to_indices(table, dims, selector, atol)
-end
-
-# Find the order of the table's rows according to the coordinate values 
-_coords_to_indices(table, dims::Tuple, sel, atol) = 
-    _coords_to_indices(_dim_cols(table, dims), dims, sel, atol)
-function _coords_to_indices(coords::NamedTuple, dims::Tuple, sel, atol)
-    ords = _coords_to_ords(coords, dims, sel, atol)
-    indices = _ords_to_indices(ords, dims)
-    return indices
 end
 
 """
@@ -206,46 +201,39 @@ function _data_cols(table, dims::Tuple)
     return NamedTuple{Tuple(data_cols)}(Tables.getcolumn(table, col) for col in data_cols)
 end
 
+_coords_to_indices(table, dims::Tuple, sel, atol) = 
+    _coords_to_indices(_dim_cols(table, dims), dims, sel, atol)
 # Determine the ordinality of a set of coordinates
-_coords_to_ords(coords::Tuple, dims::Tuple, sel, atol) = map(args -> _coords_to_ords(args..., sel, atol), zip(coords, dims))
-_coords_to_ords(coords::NamedTuple, dims::Tuple, sel, atol) = _coords_to_ords(map(x -> coords[x], name(dims)), dims, sel, atol)
+function _coords_to_indices(coords::Tuple, dims::Tuple, sel, atol)
+    map(zip(coords...)) do coords
+        map(coords, dims) do c, d
+            _coords_to_indices(c, d, sel, atol)
+        end
+    end
+end
+_coords_to_indices(coords::NamedTuple, dims::Tuple, sel, atol) = _coords_to_indices(map(x -> coords[x], name(dims)), dims, sel, atol)
 # implement some default selectors
-_coords_to_ords(coords::AbstractVector, dim::Dimension{<:AbstractCategorical}, sel::Nothing, atol) = 
-    _coords_to_ords(coords, dim, At(), atol)
-function _coords_to_ords(coords::AbstractVector, dim::Dimension{<:AbstractSampled}, sel::Nothing, atol) 
-    sel = if sampling(dim) isa Intervals
+_coords_to_indices(coord, dim::Dimension, sel::Nothing, atol) = 
+    _coords_to_indices(coord, dim, _default_selector(dim), atol)
+
+# get indices of the coordinates
+_coords_to_indices(coord, dim::Dimension, sel::Selector, atol) = 
+    return rebuild(dim, selectindices(dim, rebuild(sel, coord)))
+# get indices of the coordinates
+_coords_to_indices(coord, dim::Dimension, sel::At, atol) = 
+    return rebuild(dim, selectindices(dim, rebuild(sel; val = coord, atol)))
+
+function _default_selector(dim::Dimension{<:AbstractSampled})
+    if sampling(dim) isa Intervals
         Contains()
-    elseif isordered(dim) 
+    elseif isordered(dim) && !(eltype(dim) <: Integer)
         Near()
     else 
         At()
     end
-    _coords_to_ords(coords, dim, sel, atol)
 end
-_coords_to_ords(coords::AbstractVector, dim::Dimension, sel::Nothing) = 
-    _coords_to_ords(coords, dim, Near(), atol)
-
-# get indices of the coordinates
-function _coords_to_ords(
-    coords::AbstractVector, 
-    dim::Dimension, 
-    sel::Selector,
-    atol)
-    return map(c -> selectindices(dim, rebuild(sel, c)), coords)
-end
-# get indices of the coordinates
-function _coords_to_ords(
-    coords::AbstractVector, 
-    dim::Dimension, 
-    sel::At,
-    atol)
-    return map(c -> selectindices(dim, rebuild(sel; val = c, atol)), coords)
-end
-
-# Round coordinate ordinality to the appropriate integer given the specified locus
-_round_ords(ords::AbstractVector{<:Real}, ::DimensionalData.Start) = floor.(Int, ords)
-_round_ords(ords::AbstractVector{<:Real}, ::DimensionalData.Center) = round.(Int, ords)
-_round_ords(ords::AbstractVector{<:Real}, ::DimensionalData.End) = ceil.(Int, ords)
+_default_selector(dim::Dimension{<:AbstractCategorical}) = At()
+_default_selector(dim::Dimension) = Near()
 
 # Extract dimension value from the given vector of coordinates
 function _dim_vals(coords::AbstractVector, dim, precision::Int)
@@ -270,7 +258,7 @@ _unique_vals(coords::AbstractVector{<:Real}, precision::Int) = round.(coords, di
 _unique_vals(coords::AbstractVector{<:Integer}, ::Int) = unique(coords)
 
 # Estimate the span between consecutive coordinates
-_maybe_as_range(A::AbstractVector, precision) = A
+_maybe_as_range(A::AbstractVector, precision) = A # for non-numeric types
 function _maybe_as_range(A::AbstractVector{<:Real}, precision::Int)
     A_r = range(first(A), last(A), length(A))
     atol = 10.0^(-precision)
@@ -289,17 +277,6 @@ function _maybe_as_range(A::AbstractVector{<:Dates.AbstractTime}, precision::Int
     span = argmin(abs, steps)
     isregular = all(isinteger, round.(steps ./ span, digits=precision))
     return isregular ? range(first(A), last(A), length(A)) : A
-end
-
-# Determine the index from a tuple of coordinate orders
-function _ords_to_indices(ords, dims)
-    stride = 1
-    indices = ones(Int, length(ords[1]))
-    for (ord, dim) in zip(ords, dims)
-        indices .+= (ord .- 1) .* stride
-        stride *= length(dim)
-    end
-    return indices
 end
 
 _cast_missing(::AbstractArray, missingval::Missing) = missing
