@@ -186,7 +186,12 @@ end
     @test_throws ErrorException series(fig[1,1], dd_mat_cat)
     series!(ax, dd_mat_cat)
     
-    for dd_i in (dd_mat_cat, dd_mat_num, dd_mat_sym, dd_mat_uni) 
+    dds = if pkgversion(Makie) >= v"0.24.0" 
+        (dd_mat_cat, dd_mat_num, dd_mat_sym, dd_mat_uni) 
+    else
+        (dd_mat_cat, dd_mat_num, dd_mat_sym)
+    end
+    for dd_i in dds
         fig, ax, plt = series(dd_i)
         @test ax.ylabel[] == "test"
         @test ax.xlabel[] == "X"
