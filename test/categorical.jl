@@ -91,7 +91,6 @@ end
     @test x == [2,3,2]
 end
 
-if !(VERSION.major == 1 && VERSION.minor == 9)
 @testset "cut" begin
     x = DimArray([0.0, 0.2, 0.4, 0.6], X(1:4))
     c = cut(x,2)
@@ -104,5 +103,4 @@ if !(VERSION.major == 1 && VERSION.minor == 9)
     @test length(levels(c2)) == 2
     @test all(CategoricalArrays.refs(c2) .== [0,1,1,2])
     @test ismissing(first(c2))
-end
 end
