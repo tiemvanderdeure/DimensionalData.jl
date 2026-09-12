@@ -392,16 +392,15 @@ if isdefined(Makie, :preferred_axis_type)
             result = Makie.preferred_axis_type(P, args...)
             isnothing(result) || return result
         end
-        # for Makie 0.23, which has only single-argument preferred_axis_type
-        if applicable(Makie.preferred_axis_type, P)
-            result = Makie.preferred_axis_type(P)
-            isnothing(result) || return result
-        end
         for arg in args
             if applicable(Makie.preferred_axis_type, arg)
                 result = Makie.preferred_axis_type(arg)
                 isnothing(result) || return result
             end
+        end
+        if isdefined(Makie, :args_preferred_axis) && applicable(Makie.args_preferred_axis, P, args...)
+            result = Makie.args_preferred_axis(P, args...)
+            isnothing(result) || return result
         end
         return nothing
     end
