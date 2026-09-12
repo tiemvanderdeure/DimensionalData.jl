@@ -358,7 +358,9 @@ end
     fig, ax, plt = heatmap(dd_mat; axis = (;type = PolarAxis))
     @test ax isa Makie.PolarAxis
 
-    @test_throws Makie.InvalidAttributeError surface(dd_mat; axis = (;xlabel = "new")) # Throws an error as normal makie would
+    if pkgversion(Makie) >= v"0.24.0"
+        @test_throws Makie.InvalidAttributeError surface(dd_mat; axis = (;xlabel = "new")) # Throws an error as normal makie would
+    end
 
     dd_rgb = rand(RGB, X(1:10), Y(1:5))
     fig, ax, plt = heatmap(dd_rgb)
@@ -698,9 +700,11 @@ end
     # TODO: method series! is incomplete, we need to include the colors logic, as in series. There should not be any issue if the correct amount of colours is provided.
     fig, ax, _ = series(A2)
     series!(ax, A2)
-    fig, ax, _ = series(A2u)
-    # series!(ax, A2u) # Does not work due to Makie limitation related with missing
-    fig, ax, _ = series(A2ui)
+    if pkgversion(Makie) >= v"0.24" # untilful does not work for older Makie
+        fig, ax, _ = series(A2u)
+        # series!(ax, A2u) # Does not work due to Makie limitation related with missing
+        fig, ax, _ = series(A2ui)
+    end
     # series!(ax, A2u)
     fig, ax, _ = series(A2r)
     # series!(ax, A2r)
